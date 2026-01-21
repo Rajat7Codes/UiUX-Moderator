@@ -1,10 +1,11 @@
 package co.in.nextgencoder.ui_ux_moderator_backend.controller;
 
 import co.in.nextgencoder.ui_ux_moderator_backend.dtos.UiEvaluationRequest;
+import co.in.nextgencoder.ui_ux_moderator_backend.dtos.UiEvaluationResponse;
 import co.in.nextgencoder.ui_ux_moderator_backend.service.GeminiService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.IOException;
 import java.util.Base64;
 
 @RestController
@@ -13,34 +14,62 @@ import java.util.Base64;
 public class EvaluationController {
 
     private final GeminiService geminiService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public EvaluationController(GeminiService geminiService) {
         this.geminiService = geminiService;
     }
 
     @PostMapping
-    public String evaluate(@RequestBody UiEvaluationRequest request) throws IOException {
+    public UiEvaluationResponse evaluate(@RequestBody UiEvaluationRequest request) {
 
-        String base64Image =
-                request.getArtifacts()
-                        .getScreenshot()
-                        .split(",")[1];
+        try {
+            // 1. Decode screenshot
+            String base64Image = request.getArtifacts()
+                    .getScreenshot()
+                    .split(",")[1];
 
-        byte[] imageBytes =
-                Base64.getDecoder().decode(base64Image);
+            byte[] imageBytes = Base64.getDecoder().decode(base64Image);
 
-        String prompt = """
-You are a UX reviewer.
-Review the UI shown in the screenshot.
-Give brief feedback on layout, spacing, and clarity.
+            // 2. Strict JSON-only prompt
+            String prompt = """
+You are a UI/UX reviewer.
+
+Return ONLY valid JSON in this exact format:
+{
+  "summary": string,
+  "issues": string[],
+  "suggestions": string[],
+  "score": number
+}
+
+Rules:
+- No markdown
+- No explanations
+- No extra keys
+- Score must be between 0 and 100
+
+Evaluate layout, spacing, hierarchy, and clarity.
 """;
 
-        String aiResponse =
-                geminiService.evaluateUI(prompt, imageBytes);
+            // 3. Call Gemini
+            String aiResponse = geminiService.evaluateUI(prompt, imageBytes);
 
-        System.out.println("===== GEMINI RESPONSE =====");
-        System.out.println(aiResponse);
+            System.out.println("===== GEMINI RAW RESPONSE =====");
+            System.out.println(aiResponse);
 
-        return "OK";
+            // 4. Parse AI JSON safely
+            return objectMapper.readValue(aiResponse, UiEvaluationResponse.class);
+
+        } catch (Exception e) {
+            // 5. Fail-safe response (UI must not break)
+            e.printStackTrace();
+            return new UiEvaluationResponse(
+                    "Unable to evaluate UI at this time.",
+                    java.util.List.of(),
+                    java.util.List.of(),
+                    0
+            );
+        }
     }
 }

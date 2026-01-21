@@ -4,12 +4,16 @@ import "./App.css"
 import html2canvas from "html2canvas";
 import type { UiEvaluationRequest } from "./models/uiEvaluation";
 import { buildUiEvaluationRequest } from "./models/uiEvaluation";
+import type { UiEvaluationResponse } from "./models/uiEvaluationResponse";
+
 
 function App() {
   const [submitted, setSubmitted] = useState(false);
   const [domSnapshot, setDomSnapshot] = useState<string | null>(null);
   const [cssSnapshot, setCssSnapshot] = useState<any[] | null>(null);
   const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [evaluation, setEvaluation] = useState<UiEvaluationResponse | null>(null);
+  const [loading, setLoading] = useState(false);
 
 
   const [html, setHtml] = useState<string>(`<div class="container">
@@ -75,42 +79,56 @@ btn.addEventListener( "click", () => {
   const iFrameRef = useRef<HTMLIFrameElement>(null)
 
   const handleSubmit = () => {
-  setSubmitted(true);
+    setLoading(true);
+    setEvaluation(null);
+    setSubmitted(true);
 
-  setTimeout(async () => {
-    try {
-      const iframe = iFrameRef.current;
-      if (!iframe) return;
+    setTimeout(async () => {
+      try {
+        const iframe = iFrameRef.current;
+        if (!iframe) return;
 
-      const doc = iframe.contentDocument;
-      if (!doc) return;
+        const doc = iframe.contentDocument;
+        if (!doc) return;
 
-      // 1. Capture artifacts into LOCAL variables
-      const serializedDOM = doc.documentElement.outerHTML;
-      const cssData = extractStyles(doc);
-      const image = await captureScreenshot(iframe);
+        // 1. Capture artifacts into LOCAL variables
+        const serializedDOM = doc.documentElement.outerHTML;
+        const cssData = extractStyles(doc);
+        const image = await captureScreenshot(iframe);
 
-      // 2. Update state ONLY for debug / UI
-      setDomSnapshot(serializedDOM);
-      setCssSnapshot(cssData);
-      setScreenshot(image);
+        // 2. Update state ONLY for debug / UI
+        setDomSnapshot(serializedDOM);
+        setCssSnapshot(cssData);
+        setScreenshot(image);
 
-      console.log("DOM Snapshot:", serializedDOM);
-      console.log("CSS Snapshot:", cssData);
-      console.log("Screenshot captured");
+        console.log("DOM Snapshot:", serializedDOM);
+        console.log("CSS Snapshot:", cssData);
+        console.log("Screenshot captured");
 
-      // 3. Build request from LOCAL variables (critical fix)
-      const requestPayload: UiEvaluationRequest = buildUiEvaluationRequest({
-        dom: serializedDOM,
-        css: cssData,
-        screenshot: image!,
-      });
+        // 3. Build request from LOCAL variables (critical fix)
+        const requestPayload: UiEvaluationRequest = buildUiEvaluationRequest({
+          dom: serializedDOM,
+          css: cssData,
+          screenshot: image!,
+        });
 
-      console.log("Final UI Evaluation Request", JSON.stringify(requestPayload));
-    } catch (e) {
-      console.error("Extraction failed", e);
-    }
-  }, 300);
+        console.log("Final UI Evaluation Request", JSON.stringify(requestPayload));
+
+        const response = await fetch("http://localhost:8080/api/evaluate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestPayload), // your existing payload
+        });
+
+        const data: UiEvaluationResponse = await response.json();
+        setEvaluation(data);
+        setLoading(false);
+      } catch (e) {
+        console.error("Extraction failed", e);
+      }
+    }, 300);
   };
 
 
@@ -277,8 +295,6 @@ btn.addEventListener( "click", () => {
         </div>
 
         {/* Right: Preview Placeholder */}
-
-
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
           <iframe
             title="preview"
@@ -292,22 +308,58 @@ btn.addEventListener( "click", () => {
               background: "white",
             }}
           />
-          {screenshot && (
-            <div style={{ padding: "8px", borderTop: "1px solid #ddd" }}>
-              <img
-                src={screenshot}
-                alt="UI Screenshot"
-                style={{
-                  width: "100%",
-                  maxHeight: "300px",
-                  objectFit: "contain",
-                }}
-              />
+          
+          {loading && (
+            <div style={{ padding: "12px", fontSize: "14px" }}>
+              Evaluating UI...
+            </div>
+          )}
+
+          {evaluation && (
+            <div
+              style={{
+                padding: "16px",
+                borderTop: "1px solid #ddd",
+                background: "#fafafa",
+                fontSize: "14px",
+              }}
+            >
+              {/* Score */}
+              <div style={{ fontSize: "28px", fontWeight: 700 }}>
+                Score: {evaluation.score}/100
+              </div>
+
+              {/* Summary */}
+              <p style={{ marginTop: "8px" }}>
+                {evaluation.summary}
+              </p>
+
+              {/* Issues */}
+              {evaluation.issues.length > 0 && (
+                <>
+                  <h4>Issues</h4>
+                  <ul>
+                    {evaluation.issues.map((issue, i) => (
+                      <li key={i}>{issue}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+
+              {/* Suggestions */}
+              {evaluation.suggestions.length > 0 && (
+                <>
+                  <h4>Suggestions</h4>
+                  <ul>
+                    {evaluation.suggestions.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </div>
           )}
         </div>
-
-
       </div>
     </div>
   );

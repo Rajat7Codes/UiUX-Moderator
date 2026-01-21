@@ -18,7 +18,7 @@ public class GeminiService {
 
     public String evaluateUI(String prompt, byte[] imageBytes) {
         // 1. Setup the model (Flash-Lite is the most "free" friendly model)
-        String modelName = "gemini-2.0-flash-lite";
+        String modelName = "gemini-2.5-flash-lite";
 
         // 2. Build the parts
         Part textPart = Part.builder().text(prompt).build();
@@ -39,7 +39,10 @@ public class GeminiService {
         GenerateContentResponse response = client.models.generateContent(
                 modelName,
                 Collections.singletonList(content),
-                GenerateContentConfig.builder().build()
+                GenerateContentConfig.builder()
+                        .maxOutputTokens(2048)
+                        .temperature(0.2f)
+                        .build()
         );
 
         return response.text();
