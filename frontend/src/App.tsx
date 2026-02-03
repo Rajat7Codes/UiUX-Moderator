@@ -1,10 +1,11 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Editor from "@monaco-editor/react";
 import "./App.css"
 import html2canvas from "html2canvas";
 import type { UiEvaluationRequest } from "./models/uiEvaluation";
 import { buildUiEvaluationRequest } from "./models/uiEvaluation";
 import type { UiEvaluationResponse } from "./models/uiEvaluationResponse";
+import type { Problem } from "./models/problem";
 
 
 function App() {
@@ -14,6 +15,8 @@ function App() {
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [evaluation, setEvaluation] = useState<UiEvaluationResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [problems, setProblems] = useState<Problem[]>([]);
+  const [selectedProblem, setSelectedProblem] = useState<Problem | null>(null);
 
 
   const [html, setHtml] = useState<string>(`<div class="container">
@@ -78,7 +81,26 @@ btn.addEventListener( "click", () => {
 
   const iFrameRef = useRef<HTMLIFrameElement>(null)
 
+  useEffect(() => {
+    fetch("http://localhost:8080/api/problems")
+      .then(res => res.json())
+      .then((data: Problem[]) => {
+        setProblems(data);
+        if (data.length > 0) {
+          setSelectedProblem(data[0]); // safe default
+        }
+      })
+      .catch(err => console.error("Failed to load problems", err));
+  }, []);
+
+
   const handleSubmit = () => {
+    if (!selectedProblem) {
+      alert("Please select a problem");
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setEvaluation(null);
     setSubmitted(true);
@@ -106,20 +128,25 @@ btn.addEventListener( "click", () => {
         console.log("Screenshot captured");
 
         // 3. Build request from LOCAL variables (critical fix)
-        const requestPayload: UiEvaluationRequest = buildUiEvaluationRequest({
-          dom: serializedDOM,
-          css: cssData,
-          screenshot: image!,
-        });
+        const payload = {
+          problemId: selectedProblem.id,
+          problemVersion: selectedProblem.version,
+          service: "UI_EVALUATION",
+          uiArtifacts: buildUiEvaluationRequest({
+            dom: serializedDOM,
+            css: cssData,
+            screenshot: image!,
+          }),
+        };
 
-        console.log("Final UI Evaluation Request", JSON.stringify(requestPayload));
+        console.log("Final UI Evaluation Request", JSON.stringify(payload));
 
-        const response = await fetch("http://localhost:8080/api/evaluate", {
+        const response = await fetch("http://localhost:8080/api/evaluations", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(requestPayload), // your existing payload
+          body: JSON.stringify(payload), // your existing payload
         });
 
         const data: UiEvaluationResponse = await response.json();
@@ -202,6 +229,39 @@ btn.addEventListener( "click", () => {
       >
         <span>UI / UX Moderator</span>
         <div className="action-btn-group">
+          {/* Problem Selector */}
+          <select
+            value={
+              selectedProblem
+                ? `${selectedProblem.id}:${selectedProblem.version}`
+                : ""
+            }
+            onChange={(e) => {
+              const [id, version] = e.target.value.split(":");
+              const p = problems.find(
+                pr => pr.id === id && pr.version === Number(version)
+              );
+              setSelectedProblem(p || null);
+            }}
+            style={{
+              height: "32px",
+              background: "#2a2a2a",
+              color: "#fff",
+              border: "1px solid #444",
+              borderRadius: "4px",
+              padding: "0 8px"
+            }}
+          >
+            {problems.map(p => (
+              <option
+                key={`${p.id}:${p.version}`}
+                value={`${p.id}:${p.version}`}
+              >
+                {p.title} (v{p.version})
+              </option>
+            ))}
+          </select>
+
           <button
             style={{
               background: "#4f46e5",
@@ -295,7 +355,7 @@ btn.addEventListener( "click", () => {
         </div>
 
         {/* Right: Preview Placeholder */}
-        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%" }}>
           <iframe
             title="preview"
             key={(submitted ? "submitted" : html + css + js)}
