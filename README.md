@@ -55,18 +55,10 @@ An AI-powered platform that evaluates website designs by analyzing screenshots, 
 
 ### Backend
 
+* Java 21
 * Spring Boot
-* Spring Security
 * REST APIs
-
-### Database
-
 * PostgreSQL
-
-### Cloud & DevOps
-
-* Docker
-* GitHub Actions
 
 ---
 
@@ -78,6 +70,7 @@ An AI-powered platform that evaluates website designs by analyzing screenshots, 
 * Node.js 20+
 * PostgreSQL
 * Maven
+* Google GenAI
 
 ### Backend
 
